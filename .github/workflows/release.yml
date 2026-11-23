@@ -1,0 +1,180 @@
+# Builds the Windows and the Mac version of Widescreen Player from its (private) source and
+# publishes them here as a release, together with the two small files the players use to update
+# themselves: latest.json and Widescreen-Player-code.asar.
+#
+# It is started from the project folder with "npm run release". By hand: Actions > Release >
+# Run workflow, and give the tag to build (for example v1.2.0).
+#
+# This file is kept in the source project (folder release-repo/) and copied here by the release
+# script, so change it there.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag (or commit) of the source to build, for example v1.2.0'
+        required: true
+        type: string
+      publish:
+        description: 'Publish as a release (off = build and check only)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  SOURCE_REPO: sufyanyoussef10-beep/widescreen-player
+
+jobs:
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Get the source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SOURCE_KEY }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Package
+        run: node scripts/build.js --platform=win32 --arch=x64
+
+      - name: Start-up check of the packaged app
+        timeout-minutes: 3
+        shell: pwsh
+        run: |
+          $env:WS_BOOTCHECK = "$PWD\boot-windows.json"
+          $env:WS_USERDATA = "$env:RUNNER_TEMP\ws-boot"
+          Start-Process -FilePath "dist\Widescreen Player-win32-x64\Widescreen Player.exe" -Wait
+          Get-Content boot-windows.json
+          node scripts/check-boot.js boot-windows.json
+
+      - name: Update files (the program file and latest.json)
+        run: node scripts/make-update.js --out=update
+
+      - name: The update path from start to finish
+        timeout-minutes: 15
+        run: node scripts/test-update.js --bundle=update/Widescreen-Player-code.asar
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          Rename-Item "dist\Widescreen Player-win32-x64" "Widescreen Player"
+          7z a -tzip Widescreen-Player-windows.zip ".\dist\Widescreen Player"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          retention-days: 5
+          if-no-files-found: error
+          path: |
+            Widescreen-Player-windows.zip
+            boot-windows.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: update
+          retention-days: 5
+          if-no-files-found: error
+          path: update/
+
+  mac:
+    name: Mac (Apple and Intel chips)
+    needs: windows
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - name: Get the source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.SOURCE_REPO }}
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SOURCE_KEY }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Package one app for both kinds of Mac
+        run: node scripts/build.js --platform=darwin --arch=universal
+
+      - name: Sign (ad hoc) and verify
+        run: |
+          APP="dist/Widescreen Player-darwin-universal/Widescreen Player.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          lipo -archs "$APP/Contents/MacOS/Widescreen Player"
+
+      - name: Start-up check of the packaged app
+        timeout-minutes: 3
+        run: |
+          APP="dist/Widescreen Player-darwin-universal/Widescreen Player.app"
+          WS_BOOTCHECK="$PWD/boot-mac.json" WS_USERDATA="$RUNNER_TEMP/ws-boot" "$APP/Contents/MacOS/Widescreen Player" || echo "exit code $?"
+          cat boot-mac.json
+          node scripts/check-boot.js boot-mac.json
+
+      - name: Fetch the program file made on Windows (the one the players will download)
+        uses: actions/download-artifact@v4
+        with:
+          name: update
+          path: update
+
+      - name: The update path from start to finish, on a Mac, with that file
+        timeout-minutes: 15
+        run: node scripts/test-update.js --bundle=update/Widescreen-Player-code.asar
+
+      - name: Disk image
+        run: |
+          mkdir dmg
+          ditto "dist/Widescreen Player-darwin-universal/Widescreen Player.app" "dmg/Widescreen Player.app"
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "Widescreen Player" -srcfolder dmg -ov -format UDZO Widescreen-Player-mac.dmg
+          ls -la Widescreen-Player-mac.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          retention-days: 5
+          if-no-files-found: error
+          path: |
+            Widescreen-Player-mac.dmg
+            boot-mac.json
+
+  publish:
+    name: Publish
+    needs: [windows, mac]
+    if: ${{ inputs.publish }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./art/update/latest.json').version")
+          ls -la art/*
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --title "Widescreen Player $VERSION" --notes-file art/update/release-body.md --latest \
+            art/windows/Widescreen-Player-windows.zip art/mac/Widescreen-Player-mac.dmg \
+            art/update/Widescreen-Player-code.asar art/update/latest.json
+      - name: What the players read from now on
+        run: |
+          sleep 8
+          curl -sSfL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/latest.json"
