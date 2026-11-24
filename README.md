@@ -6,15 +6,16 @@ The music player of Widescreen (LED screen, light, sound).
 
 | Your computer | Download |
 |---|---|
-| Windows | [Widescreen-Player-windows.zip](https://github.com/sufyanyoussef10-beep/widescreen-player-releases/releases/latest/download/Widescreen-Player-windows.zip) |
+| Windows | [Widescreen-Player-Setup.exe](https://github.com/sufyanyoussef10-beep/widescreen-player-releases/releases/latest/download/Widescreen-Player-Setup.exe) |
 | Mac (Apple or Intel chip) | [Widescreen-Player-mac.dmg](https://github.com/sufyanyoussef10-beep/widescreen-player-releases/releases/latest/download/Widescreen-Player-mac.dmg) |
 
 ### Windows
 
-1. Unzip the file anywhere (for example into `Documents`).
-2. Open the folder and double-click **Widescreen Player.exe**.
-   The first time, Windows may show a blue box "Windows protected your PC", because the app is not registered with Microsoft: press **More info**, then **Run anyway**.
-3. To get a Desktop icon: right-click the exe, *Send to*, *Desktop (create shortcut)*.
+1. Download **Widescreen-Player-Setup.exe** (link above) and open it.
+2. The first time, Windows may show a blue box "Windows protected your PC", because the app is not registered with Microsoft: press **More info**, then **Run anyway**.
+3. Press **Next**, then **Install**, then **Finish**. The player opens, and there is a **Widescreen Player** icon on the Desktop and in the Start menu.
+
+No administrator password is needed. To remove it later: Settings, Apps, Widescreen Player, Uninstall (your songs and settings are kept).
 
 ### Mac
 
